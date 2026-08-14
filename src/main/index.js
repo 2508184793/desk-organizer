@@ -32,10 +32,13 @@ async function applyIconsHidden(hidden) {
   return hidden;
 }
 
-/** 启动自动接管：隐藏系统图标（若用户此前已手动隐藏则不动，退出时也不恢复） */
+/** 启动接管：默认隐藏系统图标；关闭该功能时清理上次崩溃遗留的隐藏态 */
 async function startupIconTakeover() {
   if (process.env.DZ_DESKTOP) return;
-  if (store.config.settings.autoHideIcons === false) return;
+  if (store.config.settings.autoHideIcons === false) {
+    if (await desktop.getIconsHidden()) await desktop.setIconsHidden(false);
+    return;
+  }
   if (await desktop.getIconsHidden()) { iconsHiddenNow = true; return; }
   await desktop.setIconsHidden(true);
   iconsHiddenNow = true;
@@ -137,9 +140,10 @@ app.on('before-quit', () => {
 });
 
 app.on('will-quit', (e) => {
-  // 自动接管过桌面且用户未手动切换 -> 退出前恢复系统图标
-  if (!iconsAutoHidden) return;
+  // 程序不在运行时系统图标必须可见：退出前一律恢复（崩溃场景由看门狗进程兜底）
+  if (!iconsHiddenNow) return;
   e.preventDefault();
+  iconsHiddenNow = false;
   iconsAutoHidden = false;
   desktop.setIconsHidden(false).catch(() => {}).finally(() => app.exit());
 });

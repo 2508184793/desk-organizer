@@ -1,6 +1,7 @@
 'use strict';
 
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
+const path = require('path');
 
 const ICONS_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced';
 const SHCNE_ASSOCCHANGED = 0x08000000;
@@ -92,16 +93,93 @@ function notifyShellChange() {
 
 // ---------------- 对外接口 ----------------
 
+let watchdogStarted = false;
+
+/**
+ * 图标隐藏期间拉起独立看门狗进程：主程序崩溃/被强杀后自动恢复系统图标。
+ * Electron 主进程 spawn 的子进程在 app 退出时会被 Job Object 连坐杀掉，
+ * 所以经 WMI Win32_Process.Create 创建看门狗（父进程是 WMI 服务，不在 Job 内）。
+ * 幂等（图标已显示或新实例接管时不动作），一个会话只拉起一次。
+ */
+function startIconWatchdog() {
+  if (watchdogStarted || process.env.DZ_DESKTOP) return;
+  watchdogStarted = true;
+  const script = resolveWatchdogScript();
+  try {
+    const exeName = path.basename(process.execPath, '.exe');
+    // 启动器把参数放进环境变量（避免拼接超长/带引号的命令行），再经 WMI 创建看门狗。
+    // 父进程启动时间由启动器从系统精确读取（与看门狗端同一格式），用于 PID 复用防护。
+    const bootstrap = [
+      "$ppid = [Environment]::GetEnvironmentVariable('DZ_WATCH_PID', 'Process')",
+      "$proc = Get-Process -Id $ppid -ErrorAction SilentlyContinue",
+      "$st = ''; if ($proc) { $st = $proc.StartTime.ToUniversalTime().ToString('o') }",
+      "$s = [Environment]::GetEnvironmentVariable('DZ_WATCH_SCRIPT', 'Process')",
+      "$cl = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"' + $s + '\" -ParentPid ' + $ppid + ' -ProcName \"' + [Environment]::GetEnvironmentVariable('DZ_WATCH_NAME', 'Process') + '\" -ParentStartTime \"' + $st + '\"'",
+      "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cl } | Out-Null",
+    ].join('; ');
+    const env = { ...process.env };
+    env.DZ_WATCH_SCRIPT = script;
+    env.DZ_WATCH_PID = String(process.pid);
+    env.DZ_WATCH_NAME = exeName;
+    const child = spawn('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', bootstrap],
+      { stdio: 'ignore', windowsHide: true, env });
+    child.unref();
+  } catch (e) {
+    console.warn('[desktop] 看门狗启动失败', e.message);
+  }
+}
+
 async function setIconsHidden(hidden) {
   const views = findDesktopViews();
   if (views) {
     const visibleNow = !!fns.IsWindowVisible(views.listview);
     if (visibleNow === !hidden) return; // 已是目标状态，不重复切换
     fns.PostMessageA(views.defView, WM_COMMAND, CMD_TOGGLE_DESKTOP_ICONS, 0);
+    if (hidden) {
+      startIconWatchdog(); // 隐藏期间由看门狗兜底崩溃恢复
+      setRunOnceRestore(); // 关机/断电兜底：下次登录必然恢复
+    } else {
+      clearRunOnceRestore();
+    }
     return;
   }
   await regAdd(hidden ? '1' : '0');
   await notifyShellChange();
+  if (hidden) {
+    startIconWatchdog();
+    setRunOnceRestore();
+  } else {
+    clearRunOnceRestore();
+  }
+}
+
+const RUN_ONCE_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce';
+const RUN_ONCE_NAME = 'DZ_RestoreIcons';
+
+function resolveWatchdogScript() {
+  let script = path.join(__dirname, '..', '..', 'scripts', 'restore-icons-watchdog.ps1');
+  // 打包后脚本在 asar 虚拟文件系统内，PowerShell 无法运行，需指向解包后的真实路径
+  if (script.includes('app.asar') && !script.includes('app.asar.unpacked')) {
+    script = script.replace('app.asar', 'app.asar.unpacked');
+  }
+  return script;
+}
+
+/**
+ * 注册一次"下次登录恢复图标"的 RunOnce。
+ * 覆盖关机/断电 + 未开自启的场景：重启后应用不在了，也必然把图标显示回来。
+ * 图标隐藏时写入，显示时（含正常退出）删除。
+ */
+function setRunOnceRestore() {
+  try {
+    const cmd = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "${resolveWatchdogScript()}" -ForceShow`;
+    execFile('reg', ['add', RUN_ONCE_KEY, '/v', RUN_ONCE_NAME, '/t', 'REG_SZ', '/d', cmd, '/f'], () => {});
+  } catch (e) { console.warn('[desktop] RunOnce 注册失败', e.message); }
+}
+
+function clearRunOnceRestore() {
+  execFile('reg', ['delete', RUN_ONCE_KEY, '/v', RUN_ONCE_NAME, '/f'], () => {});
 }
 
 async function getIconsHidden() {
