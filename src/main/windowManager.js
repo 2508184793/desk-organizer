@@ -214,6 +214,9 @@ class WindowManager {
 
   createSettingsWindow() {
     if (this.settingsWindow && !this.settingsWindow.isDestroyed()) {
+      // 已打开：最小化时 focus() 不会还原窗口，必须先 restore 再置前
+      if (this.settingsWindow.isMinimized()) this.settingsWindow.restore();
+      this.settingsWindow.show();
       this.settingsWindow.focus();
       return;
     }
