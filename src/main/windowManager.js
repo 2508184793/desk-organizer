@@ -44,7 +44,8 @@ class WindowManager {
     const preload = path.join(__dirname, '..', 'preload', 'partition.js');
     const win = new BrowserWindow({
       x: partition.x, y: partition.y,
-      width: partition.width, height: partition.height,
+      width: partition.width,
+      height: partition.collapsed ? 34 : partition.height, // 收起状态重启后保持收起
       frame: false,
       transparent: true,
       hasShadow: false,
