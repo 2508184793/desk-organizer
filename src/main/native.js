@@ -41,9 +41,35 @@ function toHwnd(buf) {
   return buf.readBigUInt64LE(0); // 兜底：当 BigInt 传给 PowerShell
 }
 
+function getSetWindowPos() {
+  if (!user32) return null;
+  return user32.func('bool __stdcall SetWindowPos(void* hWnd, void* hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags)');
+}
+
 function nativeSetBottomMost(hwndBigInt) {
-  const SetWindowPos = user32.func('bool __stdcall SetWindowPos(void* hWnd, void* hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags)');
+  const SetWindowPos = getSetWindowPos();
+  if (!SetWindowPos) return false;
   return SetWindowPos(hwndBigInt, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
+}
+
+/**
+ * 原生移动窗口（只改位置不动尺寸）。
+ * 用于分区拖动：高 DPI 下 Electron 的 setPosition/setBounds 会让透明窗口每帧宽度 +1。
+ * @param {number} physX/physY 物理像素坐标（调用方用 screen.dipToScreenPoint 换算）
+ * 返回 true=移动成功；false=koffi 不可用，调用方回退 setPosition
+ */
+function moveWindow(nativeHandleBuf, physX, physY) {
+  if (!koffi) return false;
+  const hwnd = toHwnd(nativeHandleBuf);
+  if (!hwnd) return false;
+  try {
+    const SetWindowPos = getSetWindowPos();
+    if (!SetWindowPos) return false;
+    return !!SetWindowPos(hwnd, null, Math.round(physX), Math.round(physY), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+  } catch (e) {
+    console.error('[native] moveWindow 失败', e.message);
+    return false;
+  }
 }
 
 /**
@@ -85,5 +111,6 @@ public static class NZ {
 module.exports = {
   setBottomMost,
   psSetBottomMostAsync,
+  moveWindow,
   get backend() { return koffi ? 'koffi' : 'powershell'; },
 };

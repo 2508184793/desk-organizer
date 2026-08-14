@@ -48,7 +48,7 @@ class WindowManager {
       frame: false,
       transparent: true,
       hasShadow: false,
-      resizable: false,          // 用自绘角柄缩放，避免透明无边框的原生缩放手感差
+      resizable: true,           // 需可缩放否则 setSize 无法缩小；高 DPI 拖动用原生移动+setSize 组合（见 _moveWindow）
       movable: false,
       alwaysOnTop: false,
       focusable: false,          // 等价 WS_EX_NOACTIVATE：不抢焦点、不进 Alt-Tab
@@ -117,6 +117,18 @@ class WindowManager {
     const [w, h] = win.getSize();
     Object.assign(p, { x, y, width: w, height: h });
     this._scheduleSave();
+  }
+
+  /**
+   * 移动分区窗口。高 DPI（如 150%）下 Electron 的 setPosition/setBounds
+   * 会让透明窗口每次调用宽度 +1（越拖越大），优先走原生 SWP_NOSIZE 移动。
+   */
+  _moveWindow(win, x, y) {
+    try {
+      const pt = screen.dipToScreenPoint({ x, y });
+      if (native.moveWindow(win.getNativeWindowHandle(), pt.x, pt.y)) return;
+    } catch (e) { /* koffi 不可用，落回 Electron */ }
+    win.setPosition(x, y);
   }
 
   _scheduleSave() {
@@ -224,14 +236,9 @@ class WindowManager {
       if (!p) return;
       Object.assign(p, patch);
       if (win && !win.isDestroyed()) {
-        if (patch.x != null || patch.y != null || patch.width != null || patch.height != null) {
-          const [x, y] = win.getPosition();
-          const [w, h] = win.getSize();
-          win.setBounds({
-            x: patch.x ?? x, y: patch.y ?? y,
-            width: patch.width ?? w, height: patch.height ?? h,
-          }, false);
-        }
+        // 高 DPI 坑：setBounds 混传位置+尺寸会让透明窗口每帧 +1，拆开处理
+        if (patch.width != null || patch.height != null) win.setSize(p.width, p.height);
+        if (patch.x != null || patch.y != null) this._moveWindow(win, p.x, p.y);
       }
       this._scheduleSave();
     });
