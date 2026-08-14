@@ -25,6 +25,11 @@ const failed = new Set(); // 本会话内已知提取失败的缓存键
 function init(userDataDir, scriptsDir) {
   cacheDir = path.join(userDataDir, 'icon-cache');
   psScript = path.join(scriptsDir, 'extract-icon.ps1');
+  // 打包后脚本在 app.asar 虚拟文件系统内，PowerShell 无法运行，
+  // 需指向 electron-builder 解包出的 app.asar.unpacked 真实路径
+  if (psScript.includes('app.asar') && !psScript.includes('app.asar.unpacked')) {
+    psScript = psScript.replace('app.asar', 'app.asar.unpacked');
+  }
   fs.mkdirSync(cacheDir, { recursive: true });
 }
 

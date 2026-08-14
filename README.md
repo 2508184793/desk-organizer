@@ -50,8 +50,9 @@ assets/           应用/托盘图标
 - **窗口置底**：每个分区是一个透明无边框 BrowserWindow，用 koffi（N-API FFI）调 `SetWindowPos(HWND_BOTTOM)`
   压到壁纸之上、普通窗口之下；koffi 不可用时自动回退 PowerShell P/Invoke
 - **真实图标**：PowerShell `System.Drawing.Icon::ExtractAssociatedIcon` 提取，按扩展名/路径哈希缓存为 PNG，
-  通过自定义 `dzicon://` 协议加载
+  通过自定义 `dzicon://` 协议加载；目录图标共用共享键、提取失败不再重试
 - **零移动零风险**：拖入分区 = 写分配表；移出分区 = 进排除表（归入未分类）。系统隐藏文件（desktop.ini 等）不参与分组
+- **打包**：`scripts/` 需 `asarUnpack` 解包（PowerShell 无法运行 asar 内的 .ps1）
 
 ## 隔离测试
 

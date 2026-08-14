@@ -4,6 +4,8 @@ directories:
   output: dist
   buildResources: build
 asar: true
+asarUnpack:
+  - scripts/**
 files:
   - src/**/*
   - assets/**/*
