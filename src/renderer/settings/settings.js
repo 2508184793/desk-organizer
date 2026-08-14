@@ -49,7 +49,8 @@
       try {
         const r = await dz.organizeRun();
         const parts = Object.entries(r.byPartition || {}).map(([k, v]) => `${k}×${v}`).join('，');
-        showStatus(`已按规则归组 ${r.total} 个文件` + (parts ? `：${parts}` : ''));
+        const keep = r.manual ? `手动拖入 ${r.manual} 个保持不动，` : '';
+        showStatus(`已整理：${keep}其余 ${r.auto ?? r.total} 个按规则归组` + (parts ? `（${parts}）` : ''));
         loadHistory();
       } finally {
         btn.disabled = false;

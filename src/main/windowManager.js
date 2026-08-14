@@ -281,6 +281,8 @@ class WindowManager {
 
     ipcMain.handle(IPC.PARTITION_RENAME, (e, id, filePath, newName) => {
       const dest = shell.rename(filePath, newName);
+      // 迁移分配/排除/置顶记录到新路径，否则重命名后丢手动归属
+      this.organizer.migratePath(filePath, dest);
       this.refreshAll();
       return dest;
     });
@@ -328,6 +330,13 @@ class WindowManager {
     });
 
     ipcMain.handle(IPC.PARTITION_REMOVE, (e, id) => {
+      const p = this.getPartitionById(id);
+      if (p) {
+        // 该分区专属规则随分区移除，否则规则指向不存在的分区，文件会从所有分区消失
+        this.store.config.rules = (this.store.config.rules || []).filter((r) => r.partitionName !== p.name);
+        // 清理指向该分区的悬空分配，让文件回落到其余规则/未分类
+        this.organizer.dropPartitionRefs(id);
+      }
       this.store.config.partitions = this.store.config.partitions.filter((x) => x.id !== id);
       this.destroyPartitionWindow(id);
       this.store.saveConfig();

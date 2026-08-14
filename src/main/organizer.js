@@ -69,17 +69,28 @@ class Organizer {
       });
   }
 
-  /** 一键整理：重算全部分组（不做任何移动），返回统计 */
+  /**
+   * 一键整理：重算全部分组（不做任何移动），返回统计。
+   * 手动拖入分区的文件（分配表）永远保持原分区，只整理未手动分组的文件。
+   */
   organizeOnce() {
     const entries = this.desktopPath ? this.collectEntries(this.desktopPath) : [];
     const catchAll = this.store.config.partitions.find((p) => p.isCatchAll);
     const catchAllName = (catchAll && catchAll.name) || '未分类';
+    const assignments = this.store.config.assignments || {};
     const byPartition = {};
+    let manual = 0, auto = 0;
     for (const e of entries) {
+      const pid = assignments[path.normalize(e.path)];
+      if (pid && this.store.config.partitions.some((x) => x.id === pid)) {
+        manual++; // 手动拖入，整理时保持不动
+      } else {
+        auto++;
+      }
       const name = this.partitionNameFor(e) || catchAllName;
       byPartition[name] = (byPartition[name] || 0) + 1;
     }
-    return { total: entries.length, byPartition };
+    return { total: entries.length, manual, auto, byPartition };
   }
 
   /** 分组总览（设置窗口展示） */
@@ -138,6 +149,45 @@ class Organizer {
     this._removeExcluded(normalized);
     this.store.saveConfig();
     return 1;
+  }
+
+  /**
+   * 文件重命名后迁移分配/排除/置顶记录。
+   * 分配表按绝对路径索引，不迁移的话重命名会丢手动归属，文件被规则重新分组。
+   */
+  migratePath(oldPath, newPath) {
+    const o = path.normalize(oldPath);
+    const n = path.normalize(newPath);
+    if (o === n) return;
+    const cfg = this.store.config;
+    if (cfg.assignments && o in cfg.assignments) {
+      cfg.assignments[n] = cfg.assignments[o];
+      delete cfg.assignments[o];
+    }
+    if (Array.isArray(cfg.excluded)) {
+      const i = cfg.excluded.indexOf(o);
+      if (i >= 0) cfg.excluded[i] = n;
+    }
+    const oldName = path.basename(o);
+    const newName = path.basename(n);
+    for (const p of cfg.partitions) {
+      if (Array.isArray(p.pins)) {
+        const j = p.pins.indexOf(oldName);
+        if (j >= 0) p.pins[j] = newName;
+      }
+    }
+    this.store.saveConfig();
+  }
+
+  /** 分区被解散：清理悬空分配，使其文件回落到规则/未分类（保持可见） */
+  dropPartitionRefs(partitionId) {
+    const assignments = this.store.config.assignments;
+    if (assignments) {
+      for (const k of Object.keys(assignments)) {
+        if (assignments[k] === partitionId) delete assignments[k];
+      }
+    }
+    this.store.saveConfig();
   }
 
   _removeExcluded(normalized) {
