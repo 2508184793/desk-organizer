@@ -68,6 +68,20 @@ html, body {
 #tb-btns button:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
 #btn-close:hover { background: rgba(224, 60, 60, 0.55); }
 
+/* 左上角折叠箭头：展开朝下，收起朝右，随折叠动画旋转 */
+#btn-arrow {
+  flex: 0 0 auto;
+  width: 18px; height: 18px;
+  border: none; background: transparent;
+  color: rgba(201, 205, 217, 0.85);
+  font-size: 14px; font-weight: 700; line-height: 1;
+  cursor: pointer; padding: 0;
+  transform: rotate(90deg);
+  transition: transform 0.18s ease, color 0.15s ease;
+}
+#btn-arrow:hover { color: #fff; }
+#panel.collapsed #btn-arrow { transform: rotate(0deg); }
+
 /* ---- 内容网格 ---- */
 #content {
   flex: 1 1 auto;

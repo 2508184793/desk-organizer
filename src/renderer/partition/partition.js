@@ -8,7 +8,7 @@
   const titleEl = $('#title');
   const contentEl = $('#content');
   const ctxMenu = $('#ctx-menu');
-  const btnCollapse = $('#btn-collapse');
+  const btnArrow = $('#btn-arrow');
 
   let partition = null;
   let items = [];
@@ -39,7 +39,6 @@
     panel.style.setProperty('--opacity', String(partition.opacity == null ? 0.62 : partition.opacity));
     titleEl.textContent = partition.name;
     titleEl.title = `${partition.name} 分区 · ${items.length} 项`;
-    btnCollapse.textContent = partition.collapsed ? '＋' : '–';
     renderItems();
   }
 
@@ -100,7 +99,7 @@
     let drag = null;
     titlebar.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      if (e.target.closest('#tb-btns')) return;
+      if (e.target.closest('#tb-btns') || e.target.closest('#btn-arrow')) return;
       e.preventDefault();
       try { titlebar.setPointerCapture(e.pointerId); } catch (err) {}
       drag = {
@@ -142,12 +141,11 @@
     handle.addEventListener('pointerup', endDrag);
     handle.addEventListener('pointercancel', endDrag);
 
-    btnCollapse.addEventListener('click', () => {
+    btnArrow.addEventListener('click', () => {
       const next = !(partition && partition.collapsed);
       dz.collapse(partitionId, next);
       if (partition) partition.collapsed = next;
       panel.classList.toggle('collapsed', next);
-      btnCollapse.textContent = next ? '＋' : '–';
     });
 
     $('#btn-close').addEventListener('click', () => {
@@ -236,7 +234,7 @@
   function showTitleMenu(e) {
     showMenu(e, [
       { labelOnly: partition.name },
-      { label: partition.collapsed ? '展开分区' : '收起分区', action: () => btnCollapse.click() },
+      { label: partition.collapsed ? '展开分区' : '收起分区', action: () => btnArrow.click() },
       { label: '重命名分区', action: () => renamePartitionModal() },
       { label: '打开设置', action: () => dz.openSettings() },
       'sep',
