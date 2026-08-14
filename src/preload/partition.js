@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('dz', {
 
   // 分区管理
   removePartition: (id) => ipcRenderer.invoke(IPC.PARTITION_REMOVE, id),
+  renamePartition: (id, name) => ipcRenderer.invoke(IPC.PARTITION_RENAME_THIS, id, name),
   openSettings: () => ipcRenderer.send(IPC.OPEN_SETTINGS),
 
   // 拖入文件时把 File 转成真实路径

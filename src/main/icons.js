@@ -10,12 +10,17 @@ const { spawn } = require('child_process');
  * - 缓存目录: <userData>/icon-cache
  * - 自定义协议 dzicon://<文件名> 由 main 注册，渲染进程直接 <img src="dzicon://...">
  * - 用 PowerShell System.Drawing.ExtractAssociatedIcon 提取真实图标；
- *   队列化批量提取（一次进程调用处理多个），失败则渲染端用 emoji 兜底。
+ *   队列化批量提取（一次进程调用处理多个）。
+ * - 目录图标共用同一个缓存键 _folder.png（提取一次全目录复用）；
+ *   提取失败的键进入 failed 集合，本会话内不再重试（渲染端退回 emoji 兜底），
+ *   避免每次桌面变化都重复拉起 PowerShell。
  */
 
 const PER_TYPE_EXTS = new Set(['.lnk', '.url', '.exe', '.msi', '.bat', '.cmd', '.ico']);
+const FOLDER_KEY = '_folder.png';
 let cacheDir = '';
 let psScript = '';
+const failed = new Set(); // 本会话内已知提取失败的缓存键
 
 function init(userDataDir, scriptsDir) {
   cacheDir = path.join(userDataDir, 'icon-cache');
@@ -23,10 +28,16 @@ function init(userDataDir, scriptsDir) {
   fs.mkdirSync(cacheDir, { recursive: true });
 }
 
-/** 计算缓存键：可执行/链接/文件夹按「路径+mtime」；普通文件按「扩展名」复用通用图标 */
+function isCached(cacheFile) {
+  const full = path.join(cacheDir, cacheFile);
+  return fs.existsSync(full) && fs.statSync(full).size > 0;
+}
+
+/** 计算缓存键：目录用共享键；可执行/链接按「路径+mtime」；普通文件按「扩展名」复用 */
 function cacheKey(filePath, isDir) {
+  if (isDir) return FOLDER_KEY;
   const ext = path.extname(filePath).toLowerCase();
-  if (isDir || PER_TYPE_EXTS.has(ext)) {
+  if (PER_TYPE_EXTS.has(ext)) {
     let mtime = 0;
     try { mtime = Math.floor(fs.statSync(filePath).mtimeMs); } catch (e) {}
     return crypto.createHash('sha1').update(filePath + ':' + mtime).digest('hex') + '.png';
@@ -34,12 +45,11 @@ function cacheKey(filePath, isDir) {
   return crypto.createHash('sha1').update('ext:' + ext).digest('hex') + '.png';
 }
 
-/** 返回 { url, cacheFile } 或 null */
+/** 返回 { url, cacheFile } 或 null（null = 用 emoji 兜底） */
 function iconFor(filePath, isDir) {
   if (!cacheDir) return null;
   const cacheFile = cacheKey(filePath, isDir);
-  const full = path.join(cacheDir, cacheFile);
-  if (fs.existsSync(full) && fs.statSync(full).size > 0) {
+  if (isCached(cacheFile)) {
     return { url: 'dzicon://' + cacheFile, cacheFile };
   }
   return null;
@@ -51,13 +61,16 @@ async function extractBatch(items) {
   const need = [];
   for (const it of items) {
     const cacheFile = cacheKey(it.src, it.isDir);
-    const full = path.join(cacheDir, cacheFile);
-    if (!fs.existsSync(full) || fs.statSync(full).size === 0) {
-      need.push({ src: it.src, out: full, cacheFile });
-    }
+    if (isCached(cacheFile)) continue;
+    if (failed.has(cacheFile)) continue; // 已知失败，不再重试
+    need.push({ src: it.src, out: path.join(cacheDir, cacheFile), cacheFile });
   }
   if (!need.length) return [];
   const done = await runPs(need);
+  // 记录失败项，避免本会话内反复重试
+  for (let i = 0; i < need.length; i++) {
+    if (!done[i]) failed.add(need[i].cacheFile);
+  }
   return done.filter(Boolean).map((r) => ({ src: r.src, url: 'dzicon://' + r.cacheFile }));
 }
 

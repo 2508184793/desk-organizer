@@ -68,9 +68,15 @@
 
   // ---------------- 分区卡片 ----------------
 
-  function renderPartitions() {
+  async function renderPartitions() {
     const grid = $('#partitions-grid');
     grid.innerHTML = '';
+
+    let counts = {};
+    try {
+      const ov = await dz.organizeHistory();
+      counts = Object.fromEntries((ov.partitions || []).map((p) => [p.id, p.count]));
+    } catch (e) {}
 
     for (const p of config.partitions) {
       const card = document.createElement('div');
@@ -108,7 +114,10 @@
       colorInput.addEventListener('input', () => { swatch.style.background = colorInput.value; dz.updatePartition(p.id, { color: colorInput.value }); });
       colorRow.append(colorInput, rangeRow(p, '不透明度', 0.1, 0.9, 0.05, 'opacity'), checkboxRow(p, '圆角', 'rounded'));
 
-      card.append(head, colorRow);
+      const countLine = document.createElement('div');
+      countLine.className = 'p-folder';
+      countLine.textContent = `当前 ${counts[p.id] || 0} 个文件`;
+      card.append(head, colorRow, countLine);
       grid.appendChild(card);
     }
 

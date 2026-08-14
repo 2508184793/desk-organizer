@@ -39,6 +39,7 @@ class WindowManager {
 
   createPartitionWindow(partition) {
     if (this.partitionWindows.has(partition.id)) return;
+    this._clampToScreen(partition);
     const preload = path.join(__dirname, '..', 'preload', 'partition.js');
     const win = new BrowserWindow({
       x: partition.x, y: partition.y,
@@ -78,6 +79,23 @@ class WindowManager {
     win.on('closed', () => this.partitionWindows.delete(partition.id));
 
     this.partitionWindows.set(partition.id, win);
+  }
+
+  /** 分区位置不在任何屏幕内时，挪回主屏工作区（多显示器/分辨率变化后的安全兜底） */
+  _clampToScreen(partition) {
+    const displays = screen.getAllDisplays();
+    const onScreen = displays.some((d) => {
+      const b = d.bounds;
+      return partition.x >= b.x - 60 && partition.x < b.x + b.width - 60 &&
+             partition.y >= b.y - 20 && partition.y < b.y + b.height - 40;
+    });
+    if (!onScreen) {
+      const wa = screen.getPrimaryDisplay().workArea;
+      partition.x = wa.x + 40;
+      partition.y = wa.y + 40;
+      partition.width = Math.min(partition.width, wa.width - 80);
+      partition.height = Math.min(partition.height, wa.height - 80);
+    }
   }
 
   _pinBottom(win) {
