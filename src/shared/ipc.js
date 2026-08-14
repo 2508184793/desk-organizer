@@ -14,6 +14,7 @@ module.exports = {
   PARTITION_RENAME: 'partition:rename',
   PARTITION_PIN: 'partition:pin',               // 置顶/取消置顶
   PARTITION_COLLAPSE: 'partition:collapse',     // 收起/展开
+  PARTITION_CTX_MENU: 'partition:ctx-menu',     // 原生右键菜单（穿透卡片弹出）
 
   // ---- 设置窗口 ----
   OPEN_SETTINGS: 'open-settings',               // 分区内打开设置窗口

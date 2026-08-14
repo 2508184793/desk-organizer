@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('dz', {
   // 窗口
   updateConfig: (id, patch) => ipcRenderer.send(IPC.PARTITION_UPDATE_CFG, id, patch),
   collapse: (id, collapsed) => ipcRenderer.send(IPC.PARTITION_COLLAPSE, id, collapsed),
+  showMenu: (id, kind, item) => ipcRenderer.send(IPC.PARTITION_CTX_MENU, id, kind, item),
 
   // 文件
   dropFiles: (id, paths) => ipcRenderer.invoke(IPC.PARTITION_DROP_FILES, id, paths),

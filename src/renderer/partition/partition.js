@@ -7,7 +7,6 @@
   const panel = $('#panel');
   const titleEl = $('#title');
   const contentEl = $('#content');
-  const ctxMenu = $('#ctx-menu');
   const btnArrow = $('#btn-arrow');
 
   let partition = null;
@@ -74,7 +73,10 @@
 
     div.addEventListener('click', () => dz.open(it.path));
     div.addEventListener('dblclick', () => dz.open(it.path));
-    div.addEventListener('contextmenu', (e) => { e.preventDefault(); showItemMenu(e, it); });
+    div.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      dz.showMenu(partitionId, 'item', { path: it.path, name: it.name, isDir: it.isDir, pinned: it.pinned });
+    });
     div.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('application/dz-path', it.path);
       e.dataTransfer.effectAllowed = 'copyMove';
@@ -156,7 +158,7 @@
 
     $('#titlebar').addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      showTitleMenu(e);
+      dz.showMenu(partitionId, 'title', null);
     });
   }
 
@@ -189,140 +191,6 @@
         await dz.dropFiles(partitionId, paths);
       }
     });
-  }
-
-  // ---------------- 右键菜单 ----------------
-
-  function showMenu(e, items) {
-    ctxMenu.innerHTML = '';
-    for (const it of items) {
-      if (it === 'sep') { ctxMenu.appendChild(Object.assign(document.createElement('div'), { className: 'sep' })); continue; }
-      if (it.labelOnly) { ctxMenu.appendChild(Object.assign(document.createElement('div'), { className: 'label', textContent: it.labelOnly })); continue; }
-      const el = Object.assign(document.createElement('div'), { className: 'item' + (it.danger ? ' danger' : ''), textContent: it.label });
-      el.addEventListener('click', () => { hideMenu(); it.action(); });
-      ctxMenu.appendChild(el);
-    }
-    ctxMenu.hidden = false;
-    ctxMenu.style.left = '0px';
-    ctxMenu.style.top = '0px';
-    // 移到光标处并防止溢出
-    const mw = ctxMenu.offsetWidth, mh = ctxMenu.offsetHeight;
-    ctxMenu.style.left = Math.min(e.clientX, window.innerWidth - mw - 4) + 'px';
-    ctxMenu.style.top = Math.min(e.clientY, window.innerHeight - mh - 4) + 'px';
-  }
-
-  function hideMenu() { ctxMenu.hidden = true; ctxMenu.innerHTML = ''; }
-  document.addEventListener('click', hideMenu);
-  document.addEventListener('contextmenu', (e) => { if (!e.target.closest('.tile') && !e.target.closest('#titlebar')) hideMenu(); });
-  window.addEventListener('blur', hideMenu);
-
-  function showItemMenu(e, it) {
-    showMenu(e, [
-      { label: it.isDir ? '打开文件夹' : '打开', action: () => dz.open(it.path) },
-      { label: '打开所在文件夹', action: () => dz.showInFolder(it.path) },
-      'sep',
-      it.pinned
-        ? { label: '取消置顶', action: () => dz.pin(partitionId, it.path, false) }
-        : { label: '置顶', action: () => dz.pin(partitionId, it.path, true) },
-      { label: '重命名', action: () => renameModal(it) },
-      'sep',
-      { label: '移出分区（不再自动归类）', action: () => dz.moveOut(partitionId, it.path) },
-      { label: '删除', danger: true, action: () => confirmModal('删除该文件？', '文件将被移入回收站。', () => dz.remove(partitionId, it.path)) },
-    ]);
-  }
-
-  function showTitleMenu(e) {
-    showMenu(e, [
-      { labelOnly: partition.name },
-      { label: partition.collapsed ? '展开分区' : '收起分区', action: () => btnArrow.click() },
-      { label: '重命名分区', action: () => renamePartitionModal() },
-      { label: '打开设置', action: () => dz.openSettings() },
-      'sep',
-      { label: '解散分区', danger: true, action: () => confirmModal('解散该分区？', '窗口将关闭，文件仍在桌面原处。', () => dz.removePartition(partitionId)) },
-    ]);
-  }
-
-  // ---------------- 重命名 / 确认弹窗 ----------------
-
-  function confirmModal(title, desc, onOk) {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200';
-    const box = document.createElement('div');
-    box.style.cssText = 'background:rgba(28,30,40,.97);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:18px 20px;width:280px;box-shadow:0 10px 40px rgba(0,0,0,.5)';
-    const t = Object.assign(document.createElement('div'), { textContent: title, style: 'font-size:14px;font-weight:600;color:#fff;margin-bottom:6px' });
-    const d = Object.assign(document.createElement('div'), { textContent: desc, style: 'font-size:12px;color:rgba(255,255,255,.6);line-height:1.6;margin-bottom:14px' });
-    const btns = Object.assign(document.createElement('div'), { style: 'display:flex;justify-content:flex-end;gap:8px' });
-    const cancel = Object.assign(document.createElement('button'), { textContent: '取消', style: btnStyle(false) });
-    const ok = Object.assign(document.createElement('button'), { textContent: '确定', style: btnStyle(true) });
-    cancel.onclick = () => overlay.remove();
-    ok.onclick = () => { overlay.remove(); onOk(); };
-    btns.append(cancel, ok);
-    box.append(t, d, btns);
-    overlay.append(box);
-    document.body.append(overlay);
-  }
-
-  function btnStyle(primary) {
-    return primary
-      ? 'border:none;padding:6px 16px;border-radius:8px;background:var(--accent);color:#fff;font-size:12.5px;cursor:pointer'
-      : 'border:1px solid rgba(255,255,255,.2);padding:6px 16px;border-radius:8px;background:transparent;color:#ccc;font-size:12.5px;cursor:pointer';
-  }
-
-  function renamePartitionModal() {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200';
-    const box = document.createElement('div');
-    box.style.cssText = 'background:rgba(28,30,40,.97);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:18px 20px;width:300px';
-    const t = Object.assign(document.createElement('div'), { textContent: '重命名分区', style: 'font-size:14px;font-weight:600;color:#fff;margin-bottom:6px' });
-    const hint = Object.assign(document.createElement('div'), { textContent: '指向该分区的规则会自动同步更新。', style: 'font-size:11px;color:rgba(255,255,255,.5);margin-bottom:10px' });
-    const input = document.createElement('input');
-    input.value = partition.name;
-    input.style.cssText = 'width:100%;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font-size:13px;outline:none';
-    const btns = Object.assign(document.createElement('div'), { style: 'display:flex;justify-content:flex-end;gap:8px;margin-top:14px' });
-    const cancel = Object.assign(document.createElement('button'), { textContent: '取消', style: btnStyle(false) });
-    const ok = Object.assign(document.createElement('button'), { textContent: '确定', style: btnStyle(true) });
-    const doRename = async () => {
-      const name = input.value.trim();
-      if (name && name !== partition.name) await dz.renamePartition(partitionId, name);
-      overlay.remove();
-    };
-    cancel.onclick = () => overlay.remove();
-    ok.onclick = doRename;
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doRename(); if (e.key === 'Escape') overlay.remove(); });
-    btns.append(cancel, ok);
-    box.append(t, hint, input, btns);
-    overlay.append(box);
-    document.body.append(overlay);
-    input.focus();
-    input.select();
-  }
-
-  function renameModal(it) {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200';
-    const box = document.createElement('div');
-    box.style.cssText = 'background:rgba(28,30,40,.97);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:18px 20px;width:300px';
-    const t = Object.assign(document.createElement('div'), { textContent: '重命名', style: 'font-size:14px;font-weight:600;color:#fff;margin-bottom:10px' });
-    const input = document.createElement('input');
-    input.value = it.name;
-    input.style.cssText = 'width:100%;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font-size:13px;outline:none';
-    const btns = Object.assign(document.createElement('div'), { style: 'display:flex;justify-content:flex-end;gap:8px;margin-top:14px' });
-    const cancel = Object.assign(document.createElement('button'), { textContent: '取消', style: btnStyle(false) });
-    const ok = Object.assign(document.createElement('button'), { textContent: '确定', style: btnStyle(true) });
-    const doRename = async () => {
-      const name = input.value.trim();
-      if (name && name !== it.name) await dz.rename(partitionId, it.path, name);
-      overlay.remove();
-    };
-    cancel.onclick = () => overlay.remove();
-    ok.onclick = doRename;
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doRename(); if (e.key === 'Escape') overlay.remove(); });
-    btns.append(cancel, ok);
-    box.append(t, input, btns);
-    overlay.append(box);
-    document.body.append(overlay);
-    input.focus();
-    input.select();
   }
 
   init();

@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('path');
-const { BrowserWindow, ipcMain, screen, app } = require('electron');
+const { BrowserWindow, ipcMain, screen, app, Menu, dialog } = require('electron');
 const native = require('./native');
 const desktop = require('./desktop');
 const shell = require('./shell');
@@ -167,6 +167,164 @@ class WindowManager {
     this._saveTimer = setTimeout(() => this.store.saveConfig(), 500);
   }
 
+  // ---------------- 右键菜单 / 弹窗 ----------------
+
+  /** 收起/展开分区（含高度动画），供箭头按钮与原生菜单共用 */
+  setCollapsed(id, collapsed) {
+    const p = this.getPartitionById(id);
+    const win = this.partitionWindows.get(id);
+    if (!p || !win) return;
+    p.collapsed = !!collapsed;
+    if (!win.isDestroyed()) {
+      const [w, h] = win.getSize();
+      const target = collapsed ? 34 : Math.max(p.height || 260, 80);
+      this._animateHeight(win, id, w, h, target);
+      this.refreshPartition(id); // 同步渲染端收起样式/箭头
+    }
+    this._scheduleSave();
+    this._notifySettingsChanged();
+  }
+
+  renamePartition(id, newName) {
+    const p = this.getPartitionById(id);
+    if (!p || !newName || newName === p.name) return p;
+    const oldName = p.name;
+    p.name = newName;
+    // 同步更新指向该分区的规则
+    for (const r of this.store.config.rules || []) {
+      if (r.partitionName === oldName) r.partitionName = newName;
+    }
+    this.store.saveConfig();
+    this.refreshPartition(id);
+    this._notifySettingsChanged();
+    return p;
+  }
+
+  removePartition(id) {
+    const p = this.getPartitionById(id);
+    if (p) {
+      // 该分区专属规则随分区移除，否则规则指向不存在的分区，文件会从所有分区消失
+      this.store.config.rules = (this.store.config.rules || []).filter((r) => r.partitionName !== p.name);
+      // 清理指向该分区的悬空分配，让文件回落到其余规则/未分类
+      this.organizer.dropPartitionRefs(id);
+    }
+    this.store.config.partitions = this.store.config.partitions.filter((x) => x.id !== id);
+    this.destroyPartitionWindow(id);
+    this.store.saveConfig();
+    this._notifySettingsChanged();
+  }
+
+  /** 构建原生右键菜单模板（item=文件项，title=标题栏） */
+  _buildContextMenu(p, kind, item) {
+    const id = p.id;
+    if (kind === 'item') {
+      return [
+        { label: item.isDir ? '打开文件夹' : '打开', click: () => shell.open(item.path) },
+        { label: '打开所在文件夹', click: () => shell.showItemInFolder(item.path) },
+        { type: 'separator' },
+        { label: item.pinned ? '取消置顶' : '置顶', click: () => this._togglePin(id, item.path, !item.pinned) },
+        { label: '重命名', click: () => this._promptRename(id, { kind: 'file', path: item.path, name: item.name }) },
+        { type: 'separator' },
+        { label: '移出分区（不再自动归类）', click: () => { this.organizer.unassign(item.path); this.refreshAll(); } },
+        { label: '删除', click: () => this._confirmDelete(id, item.path) },
+      ];
+    }
+    return [
+      { label: '重命名分区', click: () => this._promptRename(id, { kind: 'partition' }) },
+      { label: '打开设置', click: () => this.createSettingsWindow() },
+      { type: 'separator' },
+      { label: p.collapsed ? '展开分区' : '收起分区', click: () => this.setCollapsed(id, !p.collapsed) },
+      { type: 'separator' },
+      { label: '解散分区', click: () => this._confirmRemove(id) },
+    ];
+  }
+
+  _togglePin(id, filePath, pinned) {
+    const p = this.getPartitionById(id);
+    if (!p) return;
+    p.pins = p.pins || [];
+    const name = path.basename(filePath);
+    if (pinned) {
+      if (!p.pins.includes(name)) p.pins.push(name);
+    } else {
+      const i = p.pins.indexOf(name);
+      if (i >= 0) p.pins.splice(i, 1);
+    }
+    this.store.saveConfig();
+    this.refreshPartition(id);
+  }
+
+  _confirmDelete(id, filePath) {
+    const win = this.partitionWindows.get(id);
+    dialog.showMessageBox(win, {
+      type: 'warning',
+      message: '删除该文件？',
+      detail: '文件将被移入回收站。',
+      buttons: ['删除', '取消'],
+      defaultId: 1,
+      cancelId: 1,
+    }).then(async ({ response }) => {
+      if (response !== 0) return;
+      await shell.trash(filePath);
+      const p = this.getPartitionById(id);
+      if (p) this.organizer.clearPin(p, filePath);
+      this.refreshAll();
+    }).catch(() => {});
+  }
+
+  _confirmRemove(id) {
+    const win = this.partitionWindows.get(id);
+    dialog.showMessageBox(win, {
+      type: 'warning',
+      message: '解散该分区？',
+      detail: '窗口将关闭，文件仍在桌面原处。',
+      buttons: ['解散', '取消'],
+      defaultId: 1,
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0) this.removePartition(id);
+    }).catch(() => {});
+  }
+
+  /** 重命名输入小窗（独立透明窗，不被分区卡片裁剪） */
+  async _promptRename(id, opts) {
+    if (opts.kind === 'partition') {
+      const p = this.getPartitionById(id);
+      const value = await this._promptText({ title: '重命名分区', initial: p?.name || '' });
+      if (value) this.renamePartition(id, value.trim());
+    } else {
+      const value = await this._promptText({ title: '重命名', initial: opts.name || '' });
+      if (!value || !value.trim() || value.trim() === opts.name) return;
+      const dest = shell.rename(opts.path, value.trim());
+      // 迁移分配/排除/置顶记录到新路径，否则重命名后丢手动归属
+      this.organizer.migratePath(opts.path, dest);
+      this.refreshAll();
+    }
+  }
+
+  _promptText({ title, initial }) {
+    return new Promise((resolve) => {
+      const chan = 'prompt:' + Math.random().toString(36).slice(2);
+      const preload = path.join(__dirname, '..', 'preload', 'prompt.js');
+      const cursor = screen.getCursorScreenPoint();
+      const win = new BrowserWindow({
+        x: cursor.x - 150, y: cursor.y - 20,
+        width: 300, height: 140,
+        frame: false, resizable: false, alwaysOnTop: true, show: false,
+        webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: false },
+      });
+      let result = null;
+      win.loadFile(path.join(__dirname, '..', 'renderer', 'prompt', 'index.html'), { query: { title, initial: initial || '', chan } });
+      win.once('ready-to-show', () => win.show());
+      ipcMain.once(chan, (e, val) => {
+        result = val;
+        if (!win.isDestroyed()) win.close();
+      });
+      win.on('closed', () => resolve(result));
+      win.on('blur', () => { /* 允许失焦继续输入，不自动关闭 */ });
+    });
+  }
+
   destroyPartitionWindow(id) {
     const win = this.partitionWindows.get(id);
     if (win && !win.isDestroyed()) win.destroy();
@@ -277,18 +435,17 @@ class WindowManager {
       this._scheduleSave();
     });
 
-    ipcMain.on(IPC.PARTITION_COLLAPSE, (e, id, collapsed) => {
-      const p = this.getPartitionById(id);
+    // ---- 原生右键菜单（Menu.popup 弹出在窗口外，收起态也不会被裁剪）----
+    ipcMain.on(IPC.PARTITION_CTX_MENU, (e, id, kind, item) => {
       const win = this.partitionWindows.get(id);
+      const p = this.getPartitionById(id);
       if (!p || !win) return;
-      p.collapsed = !!collapsed;
-      if (!win.isDestroyed()) {
-        const [w, h] = win.getSize();
-        const target = collapsed ? 34 : Math.max(p.height || 260, 80);
-        this._animateHeight(win, id, w, h, target);
-      }
-      this._scheduleSave();
-      this._notifySettingsChanged();
+      const menu = Menu.buildFromTemplate(this._buildContextMenu(p, kind, item || {}));
+      menu.popup({ window: win });
+    });
+
+    ipcMain.on(IPC.PARTITION_COLLAPSE, (e, id, collapsed) => {
+      this.setCollapsed(id, collapsed);
     });
 
     // ---- 文件操作（虚拟分组：拖入=分配，移出=取消分配）----
@@ -367,33 +524,11 @@ class WindowManager {
     });
 
     ipcMain.handle(IPC.PARTITION_REMOVE, (e, id) => {
-      const p = this.getPartitionById(id);
-      if (p) {
-        // 该分区专属规则随分区移除，否则规则指向不存在的分区，文件会从所有分区消失
-        this.store.config.rules = (this.store.config.rules || []).filter((r) => r.partitionName !== p.name);
-        // 清理指向该分区的悬空分配，让文件回落到其余规则/未分类
-        this.organizer.dropPartitionRefs(id);
-      }
-      this.store.config.partitions = this.store.config.partitions.filter((x) => x.id !== id);
-      this.destroyPartitionWindow(id);
-      this.store.saveConfig();
-      this._notifySettingsChanged();
+      this.removePartition(id);
+      return 1;
     });
 
-    ipcMain.handle(IPC.PARTITION_RENAME_THIS, (e, id, newName) => {
-      const p = this.getPartitionById(id);
-      if (!p || !newName || newName === p.name) return p;
-      const oldName = p.name;
-      p.name = newName;
-      // 同步更新指向该分区的规则
-      for (const r of this.store.config.rules || []) {
-        if (r.partitionName === oldName) r.partitionName = newName;
-      }
-      this.store.saveConfig();
-      this.refreshPartition(id);
-      this._notifySettingsChanged();
-      return p;
-    });
+    ipcMain.handle(IPC.PARTITION_RENAME_THIS, (e, id, newName) => this.renamePartition(id, newName));
 
     ipcMain.handle(IPC.RULES_SAVE, (e, rules) => {
       this.store.config.rules = rules;
