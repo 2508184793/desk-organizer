@@ -21,6 +21,8 @@ class WindowManager {
     this.settingsWindow = null;
     this.desktopPath = '';
     this._saveTimer = null;
+    this._animTimers = new Map();      // 分区id -> 折叠动画定时器
+    this._animating = new Set();       // 折叠动画进行中的分区id
   }
 
   init(desktopPath) {
@@ -114,10 +116,38 @@ class WindowManager {
     const win = this.partitionWindows.get(partitionId);
     const p = this.getPartitionById(partitionId);
     if (!win || !p) return;
+    if (this._animating.has(partitionId)) return; // 折叠动画进行中不回写
     const [x, y] = win.getPosition();
     const [w, h] = win.getSize();
-    Object.assign(p, { x, y, width: w, height: h });
+    // 高度被压到标题栏（收起态）时保留原高度，展开时要用
+    Object.assign(p, { x, y, width: w, height: h > 40 ? h : (p.height || h) });
     this._scheduleSave();
+  }
+
+  /** 折叠/展开高度动画：easeOutCubic 逐帧 setSize，结束时精确落在目标高度 */
+  _animateHeight(win, id, width, fromH, toH, duration = 160) {
+    clearTimeout(this._animTimers.get(id));
+    if (fromH === toH || win.isDestroyed()) {
+      if (!win.isDestroyed()) win.setSize(width, toH);
+      this._animating.delete(id);
+      return;
+    }
+    this._animating.add(id);
+    const start = Date.now();
+    const step = () => {
+      if (win.isDestroyed()) { this._animating.delete(id); return; }
+      const t = Math.min(1, (Date.now() - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const h = Math.round(fromH + (toH - fromH) * eased);
+      win.setSize(width, h);
+      if (t < 1) {
+        this._animTimers.set(id, setTimeout(step, 16));
+      } else {
+        win.setSize(width, toH); // 精确落点
+        this._animating.delete(id);
+      }
+    };
+    step();
   }
 
   /**
@@ -249,8 +279,11 @@ class WindowManager {
       const win = this.partitionWindows.get(id);
       if (!p || !win) return;
       p.collapsed = !!collapsed;
-      const [w] = win.getSize();
-      win.setSize(w, collapsed ? 34 : p.height || 260, false);
+      if (!win.isDestroyed()) {
+        const [w, h] = win.getSize();
+        const target = collapsed ? 34 : Math.max(p.height || 260, 80);
+        this._animateHeight(win, id, w, h, target);
+      }
       this._scheduleSave();
       this._notifySettingsChanged();
     });

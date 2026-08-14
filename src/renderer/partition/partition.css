@@ -83,6 +83,13 @@ html, body {
 #content::-webkit-scrollbar { width: 6px; }
 #content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 3px; }
 
+/* 折叠动画：内容淡出、缩放柄隐藏（窗口高度由主进程逐帧动画） */
+#content { transition: opacity 0.18s ease; }
+#panel.collapsed #content { opacity: 0; }
+#panel.collapsed #resize-handle { display: none; }
+/* 收起时标题栏撑满窗口高度（系统对可缩放窗口有 ~38px 最小高度，比标题栏 34px 略高） */
+#panel.collapsed #titlebar { flex: 1 1 auto; }
+
 /* 空状态 */
 #content.empty::after {
   content: "空分区\n拖入文件即可归入此处";

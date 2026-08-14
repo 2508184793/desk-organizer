@@ -35,6 +35,7 @@
     lastBounds = { x: partition.x, y: partition.y, width: partition.width, height: partition.height };
     document.documentElement.style.setProperty('--accent', partition.color);
     panel.classList.toggle('round-off', !partition.rounded);
+    panel.classList.toggle('collapsed', !!partition.collapsed);
     panel.style.setProperty('--opacity', String(partition.opacity == null ? 0.62 : partition.opacity));
     titleEl.textContent = partition.name;
     titleEl.title = `${partition.name} 分区 · ${items.length} 项`;
@@ -145,6 +146,7 @@
       const next = !(partition && partition.collapsed);
       dz.collapse(partitionId, next);
       if (partition) partition.collapsed = next;
+      panel.classList.toggle('collapsed', next);
       btnCollapse.textContent = next ? '＋' : '–';
     });
 
