@@ -28,6 +28,8 @@ module.exports = {
   ORGANIZE_HISTORY: 'organize:history',
   DESKTOP_ICONS_GET: 'desktop:icons-get',
   DESKTOP_ICONS_SET: 'desktop:icons-set',
+  AUTO_HIDE_GET: 'pref:autohide-get',
+  AUTO_HIDE_SET: 'pref:autohide-set',
   DESKTOP_SCREENS: 'desktop:screens',
   AUTOSTART_GET: 'autostart:get',
   AUTOSTART_SET: 'autostart:set',

@@ -13,9 +13,10 @@ const { TYPE_EMOJI } = require('../shared/types');
  * 窗口管理：创建/维护每个分区的悬浮窗口 + 设置窗口，并注册全部 IPC。
  */
 class WindowManager {
-  constructor(store, organizer) {
+  constructor(store, organizer, hooks = {}) {
     this.store = store;
     this.organizer = organizer;
+    this.hooks = hooks; // 主进程生命周期逻辑回调（如系统图标接管的实际执行者）
     this.partitionWindows = new Map(); // id -> BrowserWindow
     this.settingsWindow = null;
     this.desktopPath = '';
@@ -363,10 +364,22 @@ class WindowManager {
 
     ipcMain.handle(IPC.DESKTOP_ICONS_GET, () => desktop.getIconsHidden());
     ipcMain.handle(IPC.DESKTOP_ICONS_SET, async (e, hidden) => {
+      if (this.hooks.onIconsSet) return this.hooks.onIconsSet(!!hidden);
       await desktop.setIconsHidden(!!hidden);
       this.store.config.settings.iconsHidden = !!hidden;
       this.store.saveConfig();
       return hidden;
+    });
+
+    ipcMain.handle(IPC.AUTO_HIDE_GET, () => {
+      if (this.hooks.onAutoHideGet) return this.hooks.onAutoHideGet();
+      return this.store.config.settings.autoHideIcons !== false;
+    });
+    ipcMain.handle(IPC.AUTO_HIDE_SET, (e, on) => {
+      if (this.hooks.onAutoHideSet) return this.hooks.onAutoHideSet(!!on);
+      this.store.config.settings.autoHideIcons = !!on;
+      this.store.saveConfig();
+      return on;
     });
 
     ipcMain.handle(IPC.DESKTOP_SCREENS, () =>

@@ -332,13 +332,22 @@
 
   async function renderPrefs() {
     const iconsCb = $('#pref-icons');
+    const autoHideCb = $('#pref-autohide');
     const autoCb = $('#pref-autostart');
-    const iconsHidden = await dz.getIconsHidden();
-    const autoStart = await dz.getAutoStart();
+    const [iconsHidden, autoHide, autoStart] = await Promise.all([
+      dz.getIconsHidden(),
+      dz.getAutoHide(),
+      dz.getAutoStart(),
+    ]);
     iconsCb.checked = iconsHidden;
+    autoHideCb.checked = autoHide;
     autoCb.checked = autoStart;
 
     iconsCb.onchange = () => dz.setIconsHidden(iconsCb.checked);
+    autoHideCb.onchange = async () => {
+      await dz.setAutoHide(autoHideCb.checked);
+      iconsCb.checked = await dz.getIconsHidden(); // 开/关自动接管会立即改变图标显示状态
+    };
     autoCb.onchange = () => dz.setAutoStart(autoCb.checked);
   }
 

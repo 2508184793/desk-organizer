@@ -17,6 +17,52 @@ app.setAppUserModelId(APP_ID);
 let store, organizer, wm, watcher, tray;
 let isQuitting = false;
 
+// 系统桌面图标接管状态（仅真实桌面模式生效，隔离测试不碰注册表）
+let iconsHiddenNow = false;  // 注册表 HideIcons 的当前值
+let iconsAutoHidden = false; // 本次会话由自动接管隐藏（退出时恢复；手动切换过则不再恢复）
+
+/** 手动隐藏/显示系统桌面图标（托盘、设置窗口共用） */
+async function applyIconsHidden(hidden) {
+  await desktop.setIconsHidden(hidden);
+  iconsHiddenNow = hidden;
+  iconsAutoHidden = false; // 手动操作视为用户接管，退出时保持现状
+  store.config.settings.iconsHidden = hidden;
+  store.saveConfig();
+  rebuildTrayMenu();
+  return hidden;
+}
+
+/** 启动自动接管：隐藏系统图标（若用户此前已手动隐藏则不动，退出时也不恢复） */
+async function startupIconTakeover() {
+  if (process.env.DZ_DESKTOP) return;
+  if (store.config.settings.autoHideIcons === false) return;
+  if (await desktop.getIconsHidden()) { iconsHiddenNow = true; return; }
+  await desktop.setIconsHidden(true);
+  iconsHiddenNow = true;
+  iconsAutoHidden = true;
+  rebuildTrayMenu();
+}
+
+/** 设置窗口：开/关「启动时自动隐藏系统图标」 */
+async function setAutoHide(on) {
+  store.config.settings.autoHideIcons = on;
+  store.saveConfig();
+  if (!process.env.DZ_DESKTOP) {
+    if (on && !iconsHiddenNow) {
+      await desktop.setIconsHidden(true);
+      iconsHiddenNow = true;
+      iconsAutoHidden = true;
+    } else if (!on && iconsAutoHidden) {
+      // 关闭自动接管：撤销本次自动隐藏，还原系统图标
+      await desktop.setIconsHidden(false);
+      iconsHiddenNow = false;
+      iconsAutoHidden = false;
+    }
+  }
+  rebuildTrayMenu();
+  return on;
+}
+
 // 自定义协议：dzicon://<缓存文件名> 用于渲染分区内真实文件图标
 protocol.registerSchemesAsPrivileged([
   { scheme: 'dzicon', privileges: { standard: false, secure: true, supportFetchAPI: false, stream: true } },
@@ -49,7 +95,11 @@ if (!gotLock) {
     organizer.bind(desktopPath);
 
     // 窗口
-    wm = new WindowManager(store, organizer);
+    wm = new WindowManager(store, organizer, {
+      onIconsSet: applyIconsHidden,
+      onAutoHideGet: () => store.config.settings.autoHideIcons !== false,
+      onAutoHideSet: setAutoHide,
+    });
     wm.init(desktopPath);
     wm.createAll();
     // 仅首次启动弹设置窗口；之后通过托盘/分区右键打开
@@ -70,6 +120,7 @@ if (!gotLock) {
     });
 
     setupTray();
+    startupIconTakeover(); // 异步接管桌面（隐藏系统图标），不阻塞启动
 
     app.on('activate', () => wm.createSettingsWindow());
   });
@@ -85,9 +136,37 @@ app.on('before-quit', () => {
   if (store) store.saveConfig();
 });
 
+app.on('will-quit', (e) => {
+  // 自动接管过桌面且用户未手动切换 -> 退出前恢复系统图标
+  if (!iconsAutoHidden) return;
+  e.preventDefault();
+  iconsAutoHidden = false;
+  desktop.setIconsHidden(false).catch(() => {}).finally(() => app.exit());
+});
+
 app.on('quit', () => {
   // 清理临时图标任务文件
 });
+
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    { label: '打开设置', click: () => wm.createSettingsWindow() },
+    { label: '✨ 一键整理', click: () => { organizer.organizeOnce(); wm.refreshAll(); } },
+    { type: 'separator' },
+    {
+      label: '隐藏桌面系统图标',
+      type: 'checkbox',
+      checked: iconsHiddenNow,
+      click: (item) => applyIconsHidden(item.checked),
+    },
+    { type: 'separator' },
+    { label: '退出', click: () => { isQuitting = true; app.quit(); } },
+  ]);
+}
+
+function rebuildTrayMenu() {
+  if (tray) tray.setContextMenu(buildTrayMenu());
+}
 
 function setupTray() {
   const iconPath = path.join(__dirname, '..', '..', 'assets', 'tray-icon.png');
@@ -95,26 +174,7 @@ function setupTray() {
   if (icon.isEmpty()) icon = nativeImage.createEmpty();
   tray = new Tray(icon);
   tray.setToolTip('桌面整理助手');
-
-  const buildMenu = () => {
-    return Menu.buildFromTemplate([
-      { label: '打开设置', click: () => wm.createSettingsWindow() },
-      { label: '✨ 一键整理', click: () => { organizer.organizeOnce(); wm.refreshAll(); } },
-      { type: 'separator' },
-      {
-        label: '隐藏桌面系统图标',
-        type: 'checkbox',
-        checked: false,
-        click: async (item) => {
-          await desktop.setIconsHidden(item.checked);
-        },
-      },
-      { type: 'separator' },
-      { label: '退出', click: () => { isQuitting = true; app.quit(); } },
-    ]);
-  };
-
-  tray.setContextMenu(buildMenu());
+  tray.setContextMenu(buildTrayMenu());
   tray.on('click', () => wm.createSettingsWindow());
   tray.on('double-click', () => wm.createSettingsWindow());
 }

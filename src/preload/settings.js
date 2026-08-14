@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('dz', {
 
   getIconsHidden: () => ipcRenderer.invoke(IPC.DESKTOP_ICONS_GET),
   setIconsHidden: (hidden) => ipcRenderer.invoke(IPC.DESKTOP_ICONS_SET, hidden),
+  getAutoHide: () => ipcRenderer.invoke(IPC.AUTO_HIDE_GET),
+  setAutoHide: (on) => ipcRenderer.invoke(IPC.AUTO_HIDE_SET, on),
   getScreens: () => ipcRenderer.invoke(IPC.DESKTOP_SCREENS),
   getAutoStart: () => ipcRenderer.invoke(IPC.AUTOSTART_GET),
   setAutoStart: (on) => ipcRenderer.invoke(IPC.AUTOSTART_SET, on),

@@ -62,7 +62,11 @@
         <div class="tab-head"><h2>其他设置</h2></div>
         <div class="prefs">
           <label class="switch-row">
-            <span><b>隐藏系统桌面图标</b><small>桌面由程序绘制的分区面板接管，去掉系统图标更清爽</small></span>
+            <span><b>启动时自动隐藏系统图标</b><small>启动即接管桌面隐藏系统图标，退出程序时自动恢复显示；手动切换过则保持现状</small></span>
+            <input type="checkbox" id="pref-autohide" class="switch" />
+          </label>
+          <label class="switch-row">
+            <span><b>隐藏系统桌面图标</b><small>立即隐藏/显示系统图标（手动模式，切换后退出不再自动恢复）</small></span>
             <input type="checkbox" id="pref-icons" class="switch" />
           </label>
           <label class="switch-row">

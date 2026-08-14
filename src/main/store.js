@@ -38,7 +38,7 @@ class Store {
       rules: DEFAULT_RULES.map((r, i) => ({ ...r, id: 'rule-' + (i + 1), priority: i + 1 })),
       assignments: {}, // 拖入分区的显式指定：{ 绝对路径: 分区id }，优先于规则
       excluded: [],    // 被移出分区的文件（不再按规则归类，归入未分类）
-      settings: { iconsHidden: false, autoStart: false, showOnLaunch: true },
+      settings: { iconsHidden: false, autoHideIcons: true, autoStart: false, showOnLaunch: true },
     };
   }
 
