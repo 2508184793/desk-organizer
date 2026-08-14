@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' dzicon: data:; style-src 'self' 'unsafe-inline'" />
+  <title>分区</title>
+  <link rel="stylesheet" href="partition.css" />
+</head>
+<body>
+  <div id="panel">
+    <div id="titlebar">
+      <span id="title-dot"></span>
+      <span id="title" title="文档分区"></span>
+      <div id="tb-btns">
+        <button id="btn-collapse" title="收起/展开">–</button>
+        <button id="btn-close" title="解散分区">×</button>
+      </div>
+    </div>
+    <div id="content"></div>
+    <div id="drop-hint">松开以归入此分区</div>
+    <div id="resize-handle" title="拖动调整大小"></div>
+  </div>
+
+  <div id="ctx-menu" hidden></div>
+
+  <script src="partition.js"></script>
+</body>
+</html>

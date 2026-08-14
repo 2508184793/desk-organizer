@@ -1,0 +1,26 @@
+appId: com.cj.deskorganizer
+productName: 桌面整理助手
+directories:
+  output: dist
+  buildResources: build
+asar: true
+files:
+  - src/**/*
+  - assets/**/*
+  - scripts/**/*
+  - package.json
+  - node_modules/**/*
+compression: normal
+win:
+  target:
+    - nsis
+  icon: assets/icon.png
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 桌面整理助手
+  artifactName: 桌面整理助手-Setup-${version}.exe
